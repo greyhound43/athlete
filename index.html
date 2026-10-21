@@ -121,6 +121,22 @@ input[type=date],input[type=time]{min-width:0}
 .q button:active{transform:scale(.9)}
 .q button.on{background:var(--fg);color:var(--bg)}
 .note{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.5}
+@keyframes pulse{from{transform:scale(1);opacity:.9}to{transform:scale(2.8);opacity:0}}
+.chart .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 1.8s ease-out infinite}
+.year{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 14px}
+.ym .row{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.ym.cur b{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.yg{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.yg i{aspect-ratio:1;border-radius:3px;background:#1f1f1f}
+.yg i.e{background:none}
+.yg i.on{background:var(--fg)}
+.yg i.t{outline:1.5px solid var(--fg);outline-offset:1px}
+.yg i.f{opacity:.35}
+.glasses{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
+.glass{width:32px;height:40px;background:none;border:0;color:var(--dim);padding:0;cursor:pointer;transition:transform .15s var(--ease),color .2s}
+.glass.on{color:var(--fg)}
+.glass:active{transform:scale(.85)}
+.glass svg{width:100%;height:100%}
 </style>
 </head>
 <body>
@@ -138,9 +154,9 @@ input[type=date],input[type=time]{min-width:0}
 
 <script>
 // ---------- данные ----------
-const APP_V = 2; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 3; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
-const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, sleep: 8}};
+const DEF = {workouts: [], food: [], sleep: [], body: [], water: {}, settings: {kcal: 2500, protein: 150, sleep: 8, water: 8}};
 let S = null;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
 S = Object.assign(JSON.parse(JSON.stringify(DEF)), S || {});
@@ -171,6 +187,9 @@ const sleepH = s => { const [bh, bm] = s.bed.split(':').map(Number), [wh, wm] = 
 const fmtH = h => { const m = Math.round(h * 60); return Math.floor(m / 60) + 'ч ' + pad(m % 60) + 'м'; };
 const stat = (label, val, sub) => `<div class="stat"><b>${val}</b><span>${label}</span>${sub ? `<em>${sub}</em>` : ''}</div>`;
 const weekStart = s => { const d = parse(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return iso(d); };
+const daysBetween = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
+const fmtDM = s => { const d = parse(s); return d.getDate() + ' ' + MG[d.getMonth()].slice(0, 3) + '.'; };
+const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 10 || h >= 20) ? b : c; };
 
 // "3×8 · 80 кг, 1×6 · 85 кг"
 function setsText(sets) {
@@ -180,7 +199,7 @@ function setsText(sets) {
 }
 
 // ---------- состояние экрана ----------
-const state = {tab: 'day', sel: today(), month: today().slice(0, 7), foodDate: today(), ex: null, metric: 'max'};
+const state = {tab: 'day', sel: today(), month: today().slice(0, 7), foodDate: today(), ex: null, metric: 'max', year: new Date().getFullYear()};
 let draft = null, sheetKind = null, sheetOpen = false, editId = null, recentFood = [], quality = 3;
 
 // ---------- графики ----------
@@ -256,6 +275,7 @@ function vDay() {
   <div class="legend"><span><i style="background:#fff"></i>тренировка</span><span><i style="background:#8a8a8a;width:5px;height:5px"></i>еда / сон</span></div>
   <h2>Тренировки</h2>
   <div class="stats">${stat('Неделя', week)}${stat('Месяц', month)}${stat('Всего', dates.length)}</div>
+  ${seasonCard()}
   <h2>${fmtDate(sel)} · ${sel === t ? 'сегодня' : WDL[parse(sel).getDay()]}</h2>
   ${daySummary(sel)}`;
 }
@@ -300,6 +320,7 @@ function vFood() {
     <div class="bar"><i style="width:${Math.min(100, p / st.protein * 100)}%"></i></div>
     <div class="sm mut" style="margin-top:12px">Жиры ${fmtN(sum('f'))} г · Углеводы ${fmtN(sum('c'))} г</div>
   </div>
+  ${waterCard(d)}
   <button class="btn" data-act="newF" data-d="${d}">+ Добавить еду</button>
   ${fs.length ? `<div class="list" style="margin-top:12px">${fs.map(f => `<button class="li" data-act="editF" data-id="${f.id}"><span>${esc(f.name)}<br><span class="mut sm">Б ${fmtN(num(f.p))} · Ж ${fmtN(num(f.f))} · У ${fmtN(num(f.c))}</span></span><span class="num">${fmtN(num(f.kcal))}</span></button>`).join('')}</div>` : '<div class="empty">За этот день ничего не записано</div>'}
   <h2>Калории · 14 дней</h2><div class="card">${barChart(items, {goal: st.kcal, every: 2})}</div>`;
@@ -349,7 +370,7 @@ function series(key, metric) {
 
 function vProg() {
   const ex = exIndex(), t = today();
-  let h = '<h2>Прогрессия упражнений</h2>';
+  let h = yearGrid() + '<h2>Прогрессия упражнений</h2>';
   if (!ex.length) h += '<div class="card mut">Запиши первую тренировку с весами — здесь появится график, как растут цифры.</div>';
   else {
     if (!ex.find(e => e.k === state.ex)) state.ex = ex[0].k;
@@ -380,6 +401,122 @@ function vProg() {
   h += `<button class="btn ghost" data-act="newB">+ Записать вес</button>`;
   if (bw.length) h += `<div class="list" style="margin-top:10px">${bw.slice(-6).reverse().map(x => `<button class="li" data-act="editB" data-id="${x.id}"><span class="mut sm">${fmtDate(x.date)}</span><span class="num">${fmtN(x.w)} кг</span></button>`).join('')}</div>`;
   return h;
+}
+
+// ---------- сезон: восхождение на гору ----------
+// Каждая тренировка в сезоне — шаг вверх; неделя совсем без тренировок — шаг вниз.
+// Вершина = недель × цель в неделю.
+function seasonCfg() {
+  if (!S.settings.season) {
+    const t = today();
+    let end = t.slice(0, 4) + '-12-31';
+    if (daysBetween(t, end) < 41) end = addDays(t, 69);
+    S.settings.season = {name: 'Winter Arc', start: t, end, target: 3};
+    save();
+  }
+  return S.settings.season;
+}
+
+function season() {
+  const z = seasonCfg(), t = today();
+  const days = daysBetween(z.start, z.end) + 1, nW = Math.max(1, Math.round(days / 7));
+  const dates = uniq(S.workouts.map(w => w.date)).filter(d => d >= z.start && d <= z.end);
+  const weeks = [];
+  let step = 0;
+  for (let i = 0; i < nW; i++) {
+    const ws = addDays(z.start, 7 * i), we = i === nW - 1 ? z.end : addDays(ws, 6);
+    const done = dates.filter(d => d >= ws && d <= we).length;
+    const st = we < t ? (done >= z.target ? 'ok' : done ? 'part' : 'miss') : ws <= t ? 'now' : 'future';
+    step = Math.max(0, step + done - (st === 'miss' ? 1 : 0));
+    weeks.push({ws, we, done, st});
+  }
+  const total = nW * z.target, day = Math.min(Math.max(daysBetween(z.start, t) + 1, 0), days);
+  const wi = Math.min(Math.max(Math.floor((day - 1) / 7), 0), nW - 1);
+  return {z, days, day, nW, weeks, step: Math.min(step, total), total, wi, cur: weeks[wi]};
+}
+
+function mountain(s, big) {
+  const W = 340, H = big ? 320 : 150, L = 14, R = 28, T = big ? 46 : 22, B = big ? 34 : 12;
+  const n = s.total, k = s.z.target;
+  // у каждой недели свой уклон — получается неровный склон с полками
+  const seed = [...s.z.name].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const rnd = i => { const x = Math.sin(i * 12.9898 + seed) * 43758.5453; return x - Math.floor(x); };
+  const slope = s.weeks.map((_, i) => .2 + rnd(i) * 1.6), sum = slope.reduce((a, b) => a + b, 0) * k;
+  const P = [[L, H - B]];
+  let y = 0;
+  for (let j = 1; j <= n; j++) { y += slope[Math.floor((j - 1) / k)]; P.push([L + j / n * (W - L - R), H - B - y / sum * (H - T - B)]); }
+  const pts = a => a.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const me = P[s.step], top = P[n];
+  let g = `<polyline points="${pts(P.slice(s.step))}" fill="none" stroke="#5a5a5a" stroke-width="2.5" stroke-dasharray="0.1 6" stroke-linecap="round"/>`;
+  if (s.step) g += `<polyline class="ln" pathLength="1" points="${pts(P.slice(0, s.step + 1))}" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if (big) s.weeks.forEach((w, i) => {
+    const p = P[i * k], c = i === s.wi ? 'v' : '';
+    g += `<line x1="${p[0]}" x2="${p[0]}" y1="${p[1] + 9}" y2="${p[1] + 19}" stroke="${w.st === 'ok' ? '#fff' : '#4a4a4a'}" stroke-width="1.5"/><text class="${c}" x="${p[0]}" y="${p[1] + 31}" text-anchor="middle">Н${i + 1}</text>`;
+  });
+  g += `<line x1="${top[0]}" x2="${top[0]}" y1="${top[1]}" y2="${top[1] - 26}" stroke="currentColor" stroke-width="2"/><path d="M${top[0]} ${top[1] - 26}l17 5.5-17 5.5z" fill="currentColor"/>`;
+  if (big) g += `<text class="v" x="${top[0] + 17}" y="${top[1] - 34}" text-anchor="end">Вершина · ${fmtDM(s.z.end)}</text>`;
+  g += `<circle class="pulse" cx="${me[0]}" cy="${me[1]}" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="${me[0]}" cy="${me[1]}" r="6" fill="currentColor" stroke="#000" stroke-width="2"/>`;
+  if (big) g += `<text class="v" x="${Math.max(me[0] - 6, L)}" y="${me[1] - 16}">ТЫ ЗДЕСЬ · шаг ${s.step}</text>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">${g}</svg>`;
+}
+
+function seasonCard() {
+  const s = season();
+  return `<h2>Сезон</h2><button class="card" data-act="season">
+    <div class="row"><span class="ttl">${esc(s.z.name)}</span><span class="num">Шаг ${s.step} / ${s.total} ›</span></div>
+    ${mountain(s)}
+    <div class="sm mut">Неделя ${s.wi + 1} из ${s.nW} · на этой неделе ${s.cur.done} из ${s.z.target} · смотреть восхождение</div></button>`;
+}
+
+function openSeason() {
+  const s = season(), z = s.z, left = s.total - s.step;
+  const mark = {ok: ' ✓', miss: ' ↓', now: ' ●', part: '', future: ''};
+  sheetKind = 'season';
+  openSheet(z.name, `
+    <div class="mut sm" style="letter-spacing:.12em;text-transform:uppercase;font-weight:800">${fmtDM(z.start)} — ${fmtDM(z.end)} · ${s.days} дн.</div>
+    <div class="big" style="font-size:36px;margin-top:6px">Шаг ${s.step} <span class="mut" style="font-size:20px">/ ${s.total}</span></div>
+    <div style="margin-top:6px;line-height:1.5">День ${s.day} из ${s.days}. Неделя ${s.wi + 1} из ${s.nW}: ${s.cur.done} из ${z.target}.<br>${left ? 'До вершины ' + left + ' ' + plural(left, 'тренировка', 'тренировки', 'тренировок') + '.' : 'Ты на вершине!'}</div>
+    <div class="card" style="margin-top:14px">${mountain(s, true)}</div>
+    <div class="note">Каждая тренировка — шаг вверх. Цель — ${z.target} в неделю. Неделя совсем без тренировок опускает на шаг вниз.</div>
+    <h2>Недели</h2>
+    <div class="list">${s.weeks.map((w, i) => `<div class="li"><span><b>Н${i + 1}</b> <span class="mut sm">${fmtShort(w.ws)}–${fmtShort(w.we)}</span></span><span class="num">${w.st === 'future' ? '<span class="mut">—</span>' : w.done + ' / ' + z.target + mark[w.st]}</span></div>`).join('')}</div>
+    <h2>Настройки сезона</h2>
+    <label class="f"><span>Название</span><input id="z-name" value="${esc(z.name)}"></label>
+    <div class="g2"><label class="f"><span>Начало</span><input type="date" id="z-start" value="${z.start}"></label>
+    <label class="f"><span>Конец</span><input type="date" id="z-end" value="${z.end}"></label></div>
+    <label class="f"><span>Тренировок в неделю</span><input id="z-t" inputmode="numeric" value="${z.target}"></label>
+    <button class="btn" data-act="saveSeason">Сохранить</button>`);
+}
+
+// ---------- год квадратиками ----------
+function yearGrid() {
+  const y = state.year, t = today(), wd = new Set(S.workouts.map(w => w.date));
+  const total = [...wd].filter(d => d.startsWith(y + '-')).length;
+  let h = `<h2>Год</h2><div class="card">
+    <div class="row"><div class="row" style="gap:0"><button class="iconbtn" data-act="yr" data-n="-1">‹</button><span class="big" style="font-size:26px">${y}</span><button class="iconbtn" data-act="yr" data-n="1">›</button></div>
+    <span><b class="big" style="font-size:26px">${total}</b> <span class="mut sm">${plural(total, 'день', 'дня', 'дней')}</span></span></div>
+    <div class="note" style="margin:0 0 14px">Квадрат — день. Белый — день тренировки.</div><div class="year">`;
+  for (let m = 0; m < 12; m++) {
+    const off = (new Date(y, m, 1).getDay() + 6) % 7, n = new Date(y, m + 1, 0).getDate(), pre = y + '-' + pad(m + 1) + '-';
+    let cells = '<i class="e"></i>'.repeat(off), cnt = 0;
+    for (let d = 1; d <= n; d++) {
+      const ds = pre + pad(d), on = wd.has(ds);
+      if (on) cnt++;
+      cells += `<i class="${[on && 'on', ds === t && 't', ds > t && 'f'].filter(Boolean).join(' ')}"></i>`;
+    }
+    h += `<div class="ym${pre === t.slice(0, 8) ? ' cur' : ''}"><div class="row"><b>${MONTHS[m].slice(0, 3)}</b><span class="mut">${cnt}</span></div><div class="yg">${cells}</div></div>`;
+  }
+  return h + '</div></div>';
+}
+
+// ---------- вода ----------
+function waterCard(d) {
+  const goal = S.settings.water || 8, n = S.water[d] || 0;
+  const glass = (on, i) => `<button class="glass${on ? ' on' : ''}" data-act="water" data-i="${i}" aria-label="Стакан ${i}"><svg viewBox="0 0 24 28"><path d="M4 3h16l-2 22H6z" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>`;
+  let g = '';
+  for (let i = 1; i <= Math.max(goal, n); i++) g += glass(i <= n, i);
+  if (n >= goal) g += `<button class="glass" data-act="water" data-i="0" aria-label="Ещё стакан"><svg viewBox="0 0 24 28"><path d="M12 8v12M6 14h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`;
+  return `<div class="card" id="water"><div class="row"><span class="mut sm">ВОДА</span><span class="num">${n} / ${goal} · ${fmtN(n * .25)} л</span></div><div class="glasses">${g}</div></div>`;
 }
 
 const VIEWS = {day: vDay, gym: vGym, food: vFood, sleep: vSleep, prog: vProg};
@@ -483,6 +620,7 @@ function openSettings() {
     <div class="g3"><label class="f"><span>Ккал</span><input id="st-kcal" inputmode="numeric" value="${st.kcal}"></label>
     <label class="f"><span>Белок, г</span><input id="st-p" inputmode="numeric" value="${st.protein}"></label>
     <label class="f"><span>Сон, ч</span><input id="st-s" inputmode="decimal" value="${fmtN(st.sleep)}"></label></div>
+    <label class="f"><span>Вода, стаканов по 250 мл</span><input id="st-w" inputmode="numeric" value="${st.water || 8}"></label>
     <button class="btn" data-act="saveSet">Сохранить цели</button>
     <h2>Резервная копия</h2>
     <div class="note" style="margin:0 0 10px">Все данные хранятся только на этом телефоне. Время от времени сохраняй копию в файл, чтобы не потерять.</div>
@@ -574,7 +712,22 @@ const ACT = {
   },
   delB: () => { S.body = S.body.filter(x => x.id !== editId); save(); closeSheet(); render(); },
 
-  saveSet: () => { Object.assign(S.settings, {kcal: num(val('st-kcal')) || 2500, protein: num(val('st-p')) || 150, sleep: num(val('st-s')) || 8}); save(); closeSheet(); render(); },
+  saveSet: () => { Object.assign(S.settings, {kcal: num(val('st-kcal')) || 2500, protein: num(val('st-p')) || 150, sleep: num(val('st-s')) || 8, water: Math.round(num(val('st-w'))) || 8}); save(); closeSheet(); render(); },
+  season: () => openSeason(),
+  saveSeason: () => {
+    const start = val('z-start'), end = val('z-end'), target = Math.round(num(val('z-t')));
+    if (!start || !end || end <= start) return alert('Конец сезона должен быть позже начала');
+    if (target < 1 || target > 14) return alert('Тренировок в неделю: от 1 до 14');
+    S.settings.season = {name: val('z-name').trim() || 'Сезон', start, end, target};
+    save(); closeSheet(); render();
+  },
+  yr: d => { state.year += +d.n; render(); },
+  water: d => {
+    const date = state.foodDate, n = S.water[date] || 0, i = +d.i;
+    const v = i === 0 ? n + 1 : n === i ? i - 1 : i; // 0 — кнопка «+»; нажатие на последний стакан убирает его
+    if (v) S.water[date] = v; else delete S.water[date];
+    save(); document.getElementById('water').outerHTML = waterCard(date);
+  },
   hcSync: () => Android.importSleep(30, false),
   export: () => {
     if (window.Android) return Android.saveFile('athlete-' + today() + '.json', JSON.stringify(S));
