@@ -132,11 +132,12 @@ input[type=date],input[type=time]{min-width:0}
 .yg i.on{background:var(--fg)}
 .yg i.t{outline:1.5px solid var(--fg);outline-offset:1px}
 .yg i.f{opacity:.35}
-.glasses{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
-.glass{width:32px;height:40px;background:none;border:0;color:var(--dim);padding:0;cursor:pointer;transition:transform .15s var(--ease),color .2s}
-.glass.on{color:var(--fg)}
-.glass:active{transform:scale(.85)}
-.glass svg{width:100%;height:100%}
+.kcal{font-size:34px;font-weight:900;font-variant-numeric:tabular-nums;margin-top:2px}
+.kcal small,.macro small{font-size:13px;font-weight:700;color:var(--mut)}
+.macros{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+.macro span{display:block;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.macro b{display:block;font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;margin-top:4px;white-space:nowrap}
+.macro .bar{height:6px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -154,9 +155,9 @@ input[type=date],input[type=time]{min-width:0}
 
 <script>
 // ---------- данные ----------
-const APP_V = 3; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 4; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
-const DEF = {workouts: [], food: [], sleep: [], body: [], water: {}, settings: {kcal: 2500, protein: 150, sleep: 8, water: 8}};
+const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, fat: 80, carbs: 300, sleep: 8}};
 let S = null;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
 S = Object.assign(JSON.parse(JSON.stringify(DEF)), S || {});
@@ -308,19 +309,18 @@ function vFood() {
   const d = state.foodDate, t = today(), st = S.settings;
   const fs = S.food.filter(f => f.date === d);
   const sum = k => fs.reduce((a, f) => a + num(f[k]), 0);
-  const kcal = sum('kcal'), p = sum('p');
+  const kcal = sum('kcal'), left = st.kcal - kcal;
+  const macro = (label, v, goal) => `<div class="macro"><span class="mut">${label}</span><b>${fmtN(v)}<small> / ${fmtN(goal)} г</small></b><div class="bar"><i style="width:${Math.min(100, v / goal * 100)}%"></i></div></div>`;
   const items = [];
   for (let i = 13; i >= 0; i--) { const x = addDays(t, -i); items.push({l: parse(x).getDate(), y: S.food.filter(f => f.date === x).reduce((a, f) => a + num(f.kcal), 0)}); }
   return `<h2>Питание</h2>
   <div class="datenav"><button class="iconbtn" data-act="fday" data-n="-1">‹</button><b>${d === t ? 'Сегодня' : fmtDate(d)}</b><button class="iconbtn" data-act="fday" data-n="1">›</button></div>
   <div class="card">
-    <div class="row"><span class="mut sm">КАЛОРИИ</span><span class="num">${fmtN(kcal)} / ${fmtN(st.kcal)}</span></div>
+    <div class="row"><span class="mut sm">КАЛОРИИ</span><span class="mut sm">${left >= 0 ? 'осталось ' + fmtN(left) : 'перебор ' + fmtN(-left)}</span></div>
+    <div class="kcal">${fmtN(kcal)}<small> / ${fmtN(st.kcal)} ккал</small></div>
     <div class="bar"><i style="width:${Math.min(100, kcal / st.kcal * 100)}%"></i></div>
-    <div class="row" style="margin-top:14px"><span class="mut sm">БЕЛОК</span><span class="num">${fmtN(p)} / ${fmtN(st.protein)} г</span></div>
-    <div class="bar"><i style="width:${Math.min(100, p / st.protein * 100)}%"></i></div>
-    <div class="sm mut" style="margin-top:12px">Жиры ${fmtN(sum('f'))} г · Углеводы ${fmtN(sum('c'))} г</div>
+    <div class="macros">${macro('Белки', sum('p'), st.protein)}${macro('Жиры', sum('f'), st.fat)}${macro('Углеводы', sum('c'), st.carbs)}</div>
   </div>
-  ${waterCard(d)}
   <button class="btn" data-act="newF" data-d="${d}">+ Добавить еду</button>
   ${fs.length ? `<div class="list" style="margin-top:12px">${fs.map(f => `<button class="li" data-act="editF" data-id="${f.id}"><span>${esc(f.name)}<br><span class="mut sm">Б ${fmtN(num(f.p))} · Ж ${fmtN(num(f.f))} · У ${fmtN(num(f.c))}</span></span><span class="num">${fmtN(num(f.kcal))}</span></button>`).join('')}</div>` : '<div class="empty">За этот день ничего не записано</div>'}
   <h2>Калории · 14 дней</h2><div class="card">${barChart(items, {goal: st.kcal, every: 2})}</div>`;
@@ -509,16 +509,6 @@ function yearGrid() {
   return h + '</div></div>';
 }
 
-// ---------- вода ----------
-function waterCard(d) {
-  const goal = S.settings.water || 8, n = S.water[d] || 0;
-  const glass = (on, i) => `<button class="glass${on ? ' on' : ''}" data-act="water" data-i="${i}" aria-label="Стакан ${i}"><svg viewBox="0 0 24 28"><path d="M4 3h16l-2 22H6z" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>`;
-  let g = '';
-  for (let i = 1; i <= Math.max(goal, n); i++) g += glass(i <= n, i);
-  if (n >= goal) g += `<button class="glass" data-act="water" data-i="0" aria-label="Ещё стакан"><svg viewBox="0 0 24 28"><path d="M12 8v12M6 14h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`;
-  return `<div class="card" id="water"><div class="row"><span class="mut sm">ВОДА</span><span class="num">${n} / ${goal} · ${fmtN(n * .25)} л</span></div><div class="glasses">${g}</div></div>`;
-}
-
 const VIEWS = {day: vDay, gym: vGym, food: vFood, sleep: vSleep, prog: vProg};
 function render(anim) {
   const v = document.getElementById('view');
@@ -617,10 +607,11 @@ function openSettings() {
   const st = S.settings; sheetKind = 'set';
   openSheet('Настройки', `
     <h2>Цели</h2>
-    <div class="g3"><label class="f"><span>Ккал</span><input id="st-kcal" inputmode="numeric" value="${st.kcal}"></label>
-    <label class="f"><span>Белок, г</span><input id="st-p" inputmode="numeric" value="${st.protein}"></label>
-    <label class="f"><span>Сон, ч</span><input id="st-s" inputmode="decimal" value="${fmtN(st.sleep)}"></label></div>
-    <label class="f"><span>Вода, стаканов по 250 мл</span><input id="st-w" inputmode="numeric" value="${st.water || 8}"></label>
+    <div class="g2"><label class="f"><span>Калории, ккал</span><input id="st-kcal" inputmode="numeric" value="${st.kcal}"></label>
+    <label class="f"><span>Белки, г</span><input id="st-p" inputmode="numeric" value="${st.protein}"></label>
+    <label class="f"><span>Жиры, г</span><input id="st-f" inputmode="numeric" value="${st.fat}"></label>
+    <label class="f"><span>Углеводы, г</span><input id="st-c" inputmode="numeric" value="${st.carbs}"></label></div>
+    <label class="f"><span>Сон, ч</span><input id="st-s" inputmode="decimal" value="${fmtN(st.sleep)}"></label>
     <button class="btn" data-act="saveSet">Сохранить цели</button>
     <h2>Резервная копия</h2>
     <div class="note" style="margin:0 0 10px">Все данные хранятся только на этом телефоне. Время от времени сохраняй копию в файл, чтобы не потерять.</div>
@@ -712,7 +703,7 @@ const ACT = {
   },
   delB: () => { S.body = S.body.filter(x => x.id !== editId); save(); closeSheet(); render(); },
 
-  saveSet: () => { Object.assign(S.settings, {kcal: num(val('st-kcal')) || 2500, protein: num(val('st-p')) || 150, sleep: num(val('st-s')) || 8, water: Math.round(num(val('st-w'))) || 8}); save(); closeSheet(); render(); },
+  saveSet: () => { Object.assign(S.settings, {kcal: num(val('st-kcal')) || 2500, protein: num(val('st-p')) || 150, fat: num(val('st-f')) || 80, carbs: num(val('st-c')) || 300, sleep: num(val('st-s')) || 8}); save(); closeSheet(); render(); },
   season: () => openSeason(),
   saveSeason: () => {
     const start = val('z-start'), end = val('z-end'), target = Math.round(num(val('z-t')));
@@ -722,12 +713,6 @@ const ACT = {
     save(); closeSheet(); render();
   },
   yr: d => { state.year += +d.n; render(); },
-  water: d => {
-    const date = state.foodDate, n = S.water[date] || 0, i = +d.i;
-    const v = i === 0 ? n + 1 : n === i ? i - 1 : i; // 0 — кнопка «+»; нажатие на последний стакан убирает его
-    if (v) S.water[date] = v; else delete S.water[date];
-    save(); document.getElementById('water').outerHTML = waterCard(date);
-  },
   hcSync: () => Android.importSleep(30, false),
   export: () => {
     if (window.Android) return Android.saveFile('athlete-' + today() + '.json', JSON.stringify(S));
