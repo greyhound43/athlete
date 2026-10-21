@@ -138,7 +138,7 @@ input[type=date],input[type=time]{min-width:0}
 
 <script>
 // ---------- данные ----------
-const APP_V = 1; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 2; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
 const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, sleep: 8}};
 let S = null;
@@ -315,8 +315,6 @@ function vSleep() {
   return `<h2>Сон</h2>
   <div class="stats">${stat('Ср. 7 дней', avg ? fmtN(avg) + 'ч' : '—')}${stat('Последний', list[0] ? fmtN(sleepH(list[0])) + 'ч' : '—', list[0] ? fmtShort(list[0].date) : '')}${stat('Цель', fmtN(goal) + 'ч')}</div>
   <div style="height:10px"></div><button class="btn" data-act="newS" data-d="${t}">+ Записать сон</button>
-  ${window.Android ? `<button class="btn ghost" data-act="hcSync" style="margin-top:8px">Загрузить сон с часов</button>
-    <div class="note">${S.settings.hcSync ? 'Обновлено ' + new Date(S.settings.hcSync).toLocaleString('ru-RU', {day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'}) + ' · дальше подтягивается само при открытии' : 'Сон с часов Huawei через Health Connect'}</div>` : ''}
   <h2>Часы сна · 14 дней</h2><div class="card">${barChart(items, {goal, every: 2})}</div>
   <h2>Записи</h2>
   ${list.length ? `<div class="list">${list.slice(0, 30).map(s => `<button class="li" data-act="editS" data-id="${s.id}"><span>${fmtDate(s.date)}<br><span class="mut sm">${s.bed} → ${s.wake} · ${s.src === 'hc' ? (s.deep || s.rem ? `глуб. ${fmtH(s.deep / 60)} · REM ${fmtH(s.rem / 60)}` : 'с часов') : '●'.repeat(s.q || 0) + '○'.repeat(5 - (s.q || 0))}</span></span><span class="num">${fmtH(sleepH(s))}</span></button>`).join('')}</div>` : '<div class="empty">Записей пока нет</div>'}`;
