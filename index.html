@@ -152,10 +152,9 @@ input[type=date],input[type=time]{min-width:0}
 </nav>
 <div id="sheet" class="sheet"><div class="sheet-h"><div class="big" id="sh-t"></div><button class="iconbtn" data-act="close" aria-label="Закрыть">✕</button></div><div id="sh-b" class="sheet-b"></div></div>
 <input type="file" id="imp" accept=".json,application/json" hidden>
-
 <script>
 // ---------- данные ----------
-const APP_V = 4; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 5; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
 const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, fat: 80, carbs: 300, sleep: 8}};
 let S = null;
@@ -556,7 +555,7 @@ function wBody() {
     ${draft.exercises.map((e, i) => `<div class="ex">
       <div class="row"><input data-wf="name" data-e="${i}" list="dl-e" placeholder="Упражнение (жим лёжа…)" value="${esc(e.name)}"><button class="x" data-act="delEx" data-e="${i}" aria-label="Удалить упражнение">✕</button></div>
       <div class="hint" id="hint-${i}">${esc(lastTime(e.name))}</div>
-      ${e.sets.map((s, j) => `<div class="set"><span class="n">${j + 1}</span><input inputmode="decimal" data-wf="w" data-e="${i}" data-s="${j}" placeholder="кг" value="${esc(s.w)}"><span class="mut">×</span><input inputmode="numeric" data-wf="r" data-e="${i}" data-s="${j}" placeholder="повт" value="${esc(s.r)}"><button class="x" data-act="delSet" data-e="${i}" data-s="${j}" aria-label="Удалить подход">−</button></div>`).join('')}
+      ${e.sets.map((s, j) => { const p = e.sets[j - 1] || {}; return `<div class="set"><span class="n">${j + 1}</span><input inputmode="decimal" data-wf="w" data-e="${i}" data-s="${j}" placeholder="${p.w !== undefined && p.w !== '' ? esc(p.w) : 'кг'}" value="${esc(s.w)}"><span class="mut">×</span><input inputmode="numeric" data-wf="r" data-e="${i}" data-s="${j}" placeholder="${p.r !== undefined && p.r !== '' ? esc(p.r) : 'повт'}" value="${esc(s.r)}"><button class="x" data-act="delSet" data-e="${i}" data-s="${j}" aria-label="Удалить подход">−</button></div>`; }).join('')}
       <button class="btn ghost sm" data-act="addSet" data-e="${i}" style="margin-top:8px">+ Подход</button>
     </div>`).join('')}
     <button class="btn ghost" data-act="addEx">+ Упражнение</button>
@@ -652,7 +651,7 @@ const ACT = {
   editW: d => openWorkout(d.id),
   addEx: () => { draft.exercises.push({name: '', sets: [{w: '', r: ''}]}); rw(); const n = document.querySelectorAll('[data-wf=name]'); n[n.length - 1].focus(); },
   delEx: d => { draft.exercises.splice(+d.e, 1); rw(); },
-  addSet: d => { const e = draft.exercises[+d.e], l = e.sets[e.sets.length - 1] || {w: '', r: ''}; e.sets.push({w: l.w, r: l.r}); rw(); },
+  addSet: d => { draft.exercises[+d.e].sets.push({w: '', r: ''}); rw(); },
   delSet: d => { draft.exercises[+d.e].sets.splice(+d.s, 1); rw(); },
   saveW: () => {
     const w = draft;
@@ -741,8 +740,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.dataset.ch === 'ex') { state.ex = e.target.value; render(); }
-  if (e.target.id === 'imp') importFile(e.target.files[0]);
-});
+  if (e.target.id === 'imp') importFile(e.target.files[0]);});
 
 // ---------- сон с часов (Android → Health Connect) ----------
 window.onSleepData = (json, silent) => {
