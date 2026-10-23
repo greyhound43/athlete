@@ -66,9 +66,8 @@ button.card:active{transform:scale(.98);background:#161616}
 .cal .d:active{transform:scale(.9)}
 .cal .d.fut{color:var(--dim)}
 .cal .d.w{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.cal .d.t{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
-.cal .d.s{outline:2px solid var(--fg);outline-offset:2px}
-.cal .d i{position:absolute;bottom:5px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:var(--mut)}
+.cal .d.s{border:2px solid var(--fg)}
+.cal .d.w.s{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--fg)}
 .legend{display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--mut);letter-spacing:.06em}
 .legend i{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;border-radius:50%}
 label.f{display:block;margin-bottom:12px}
@@ -154,7 +153,7 @@ input[type=date],input[type=time]{min-width:0}
 <input type="file" id="imp" accept=".json,application/json" hidden>
 <script>
 // ---------- данные ----------
-const APP_V = 7; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 8; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
 const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, fat: 80, carbs: 300, sleep: 8}};
 let S = null;
@@ -258,12 +257,11 @@ function vDay() {
   const t = today(), [y, m] = state.month.split('-').map(Number);
   const off = (new Date(y, m - 1, 1).getDay() + 6) % 7, n = new Date(y, m, 0).getDate();
   const wd = new Set(S.workouts.map(w => w.date));
-  const other = new Set([...S.food.map(f => f.date), ...S.sleep.map(s => s.date)]);
   let cells = WD.map(d => `<div class="wd">${d}</div>`).join('') + '<div></div>'.repeat(off);
   for (let d = 1; d <= n; d++) {
     const ds = state.month + '-' + pad(d);
-    const cls = ['d', wd.has(ds) && 'w', ds === t && 't', ds === state.sel && 's', ds > t && 'fut'].filter(Boolean).join(' ');
-    cells += `<button class="${cls}" data-act="pick" data-d="${ds}">${d}${!wd.has(ds) && other.has(ds) ? '<i></i>' : ''}</button>`;
+    const cls = ['d', wd.has(ds) && 'w', ds === state.sel && 's', ds > t && 'fut'].filter(Boolean).join(' ');
+    cells += `<button class="${cls}" data-act="pick" data-d="${ds}">${d}</button>`;
   }
   const dates = uniq(S.workouts.map(w => w.date));
   const week = dates.filter(d => d >= weekStart(t) && d <= t).length;
@@ -272,7 +270,7 @@ function vDay() {
   return `
   <div class="row"><button class="iconbtn" data-act="mon" data-n="-1">‹</button><div class="big">${MONTHS[m - 1]} ${y}</div><button class="iconbtn" data-act="mon" data-n="1">›</button></div>
   <div class="cal">${cells}</div>
-  <div class="legend"><span><i style="background:#fff"></i>тренировка</span><span><i style="background:#8a8a8a;width:5px;height:5px"></i>еда / сон</span></div>
+  <div class="legend"><span><i style="background:#fff"></i>тренировка</span></div>
   <h2>Тренировки</h2>
   <div class="stats">${stat('Неделя', week)}${stat('Месяц', month)}${stat('Всего', dates.length)}</div>
   ${seasonCard()}
