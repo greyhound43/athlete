@@ -153,7 +153,7 @@ input[type=date],input[type=time]{min-width:0}
 <input type="file" id="imp" accept=".json,application/json" hidden>
 <script>
 // ---------- данные ----------
-const APP_V = 8; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 9; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
 const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, fat: 80, carbs: 300, sleep: 8}};
 let S = null;
@@ -183,6 +183,13 @@ const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const byDate = (a, b) => a.date.localeCompare(b.date);
 const uniq = a => [...new Set(a)];
 const sleepH = s => { const [bh, bm] = s.bed.split(':').map(Number), [wh, wm] = s.wake.split(':').map(Number); let m = wh * 60 + wm - (bh * 60 + bm); if (m <= 0) m += 1440; return m / 60; };
+// "7" → 07:00, "730" → 07:30, "2330"/"23:30" → 23:30; неверное время → ''
+const toHM = v => {
+  const d = String(v).replace(/\D/g, '');
+  if (!d || d.length > 4) return '';
+  const h = +(d.length <= 2 ? d : d.slice(0, d.length - 2)), m = d.length <= 2 ? 0 : +d.slice(-2);
+  return h < 24 && m < 60 ? pad(h) + ':' + pad(m) : '';
+};
 const fmtH = h => { const m = Math.round(h * 60); return Math.floor(m / 60) + 'ч ' + pad(m % 60) + 'м'; };
 const stat = (label, val, sub) => `<div class="stat"><b>${val}</b><span>${label}</span>${sub ? `<em>${sub}</em>` : ''}</div>`;
 const weekStart = s => { const d = parse(s); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return iso(d); };
@@ -585,8 +592,8 @@ function openSleep(id, date) {
   editId = s ? s.id : null; quality = s ? s.q || 3 : 3; sheetKind = 's';
   openSheet('Сон', `
     <label class="f"><span>Дата (утро, когда проснулся)</span><input type="date" id="s-date" value="${s ? s.date : date}"></label>
-    <div class="g2"><label class="f"><span>Лёг</span><input type="time" id="s-bed" value="${s ? s.bed : '23:00'}"></label>
-    <label class="f"><span>Встал</span><input type="time" id="s-wake" value="${s ? s.wake : '07:00'}"></label></div>
+    <div class="g2"><label class="f"><span>Лёг</span><input id="s-bed" data-hm inputmode="numeric" maxlength="5" placeholder="23:00" value="${s ? s.bed : ''}"></label>
+    <label class="f"><span>Встал</span><input id="s-wake" data-hm inputmode="numeric" maxlength="5" placeholder="07:00" value="${s ? s.wake : ''}"></label></div>
     <label class="f"><span>Как выспался</span></label><div class="q" id="s-q">${[1, 2, 3, 4, 5].map(n => `<button class="${n === quality ? 'on' : ''}" data-act="q" data-n="${n}">${n}</button>`).join('')}</div>
     <div style="height:16px"></div><button class="btn" data-act="saveS">Сохранить</button>
     ${s ? '<button class="btn danger" data-act="delS">Удалить</button>' : ''}`);
@@ -680,8 +687,9 @@ const ACT = {
   editS: d => openSleep(d.id, d.d),
   q: d => { quality = +d.n; document.querySelectorAll('#s-q button').forEach(b => b.classList.toggle('on', +b.dataset.n === quality)); },
   saveS: () => {
-    const date = val('s-date'), bed = val('s-bed'), wake = val('s-wake');
-    if (!date || !bed || !wake) return alert('Заполни дату и время');
+    const date = val('s-date'), bed = toHM(val('s-bed')), wake = toHM(val('s-wake'));
+    if (!date) return alert('Укажи дату');
+    if (!bed || !wake) return alert('Время пиши цифрами, например 2330 или 7');
     const o = {id: editId || uid(), date, bed, wake, q: quality};
     S.sleep = S.sleep.filter(x => x.id !== o.id && x.date !== date);
     S.sleep.push(o); save(); closeSheet(); render();
@@ -730,11 +738,23 @@ document.addEventListener('click', e => {
   if (t && ACT[t.dataset.act]) { e.preventDefault(); ACT[t.dataset.act](t.dataset, t); }
 });
 document.addEventListener('input', e => {
-  const t = e.target, f = t.dataset.wf;
+  const t = e.target;
+  // время сна: набираешь цифры, двоеточие ставится само (2330 → 23:30)
+  if (t.hasAttribute('data-hm')) {
+    const d = t.value.replace(/\D/g, '').slice(0, 4);
+    t.value = d.length === 4 ? d.slice(0, 2) + ':' + d.slice(2) : d;
+    if (d.length === 4 && t.id === 's-bed') document.getElementById('s-wake').focus();
+    return;
+  }
+  const f = t.dataset.wf;
   if (!f || !draft) return;
   if (f === 'date' || f === 'title' || f === 'note') draft[f] = t.value;
   else if (f === 'name') { draft.exercises[+t.dataset.e].name = t.value; document.getElementById('hint-' + t.dataset.e).textContent = lastTime(t.value); }
   else draft.exercises[+t.dataset.e].sets[+t.dataset.s][f] = t.value;
+});
+// ушёл из поля времени — "7" и "730" показываем как 07:00 и 07:30
+document.addEventListener('focusout', e => {
+  if (e.target.hasAttribute && e.target.hasAttribute('data-hm')) e.target.value = toHM(e.target.value) || e.target.value;
 });
 document.addEventListener('change', e => {
   if (e.target.dataset.ch === 'ex') { state.ex = e.target.value; render(); }
