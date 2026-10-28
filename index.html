@@ -25,7 +25,12 @@ html,body{background:var(--bg);color:var(--fg)}
 body{font-family:'Nunito',-apple-system,"Segoe UI",Roboto,Arial,sans-serif;font-weight:600;font-size:15px;line-height:1.35;min-height:100vh;padding-bottom:calc(68px + env(safe-area-inset-bottom));overscroll-behavior-y:none}
 header{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:calc(8px + env(safe-area-inset-top)) 8px 8px 16px;border-bottom:1px solid var(--line)}
 @font-face{font-family:'Logo';font-display:block;src:url(fonts/logo.woff2) format('woff2')}
-.logo{font-family:'Logo',Impact,sans-serif;font-weight:400;letter-spacing:.14em;font-size:30px;line-height:1;padding-top:3px}
+.logo{font-family:'Logo',Impact,sans-serif;font-weight:400;letter-spacing:.14em;font-size:30px;line-height:1;padding-top:3px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:opacity .2s}
+.logo.hold{opacity:.4}
+.ab-big{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.ab-big b{font-size:88px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.ab-big span{font-size:20px;font-weight:800;color:var(--mut)}
+.ab-time{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:6px}
 .iconbtn{background:none;border:0;color:var(--fg);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font:inherit;font-size:24px;font-weight:800;cursor:pointer;transition:background .2s,transform .15s var(--ease)}
 .iconbtn:active{background:#1c1c1c;transform:scale(.9)}
 .iconbtn svg{width:22px;height:22px}
@@ -153,9 +158,9 @@ input[type=date],input[type=time]{min-width:0}
 <input type="file" id="imp" accept=".json,application/json" hidden>
 <script>
 // ---------- данные ----------
-const APP_V = 9; // меняется скриптом publish.ps1 вместе с version.json
+const APP_V = 10; // меняется скриптом publish.ps1 вместе с version.json
 const KEY = 'zhelezo.v1';
-const DEF = {workouts: [], food: [], sleep: [], body: [], settings: {kcal: 2500, protein: 150, fat: 80, carbs: 300, sleep: 8}};
+const DEF = {workouts: [], food: [], sleep: [], body: [], abst: {start: null, history: []}, settings: {kcal: 2500, protein: 150, fat: 80, carbs: 300, sleep: 8}};
 let S = null;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
 S = Object.assign(JSON.parse(JSON.stringify(DEF)), S || {});
@@ -530,7 +535,7 @@ function openSheet(title, body) {
   el.classList.add('open'); sheetOpen = true;
   document.body.style.overflow = 'hidden';
 }
-function hideSheet() { document.getElementById('sheet').classList.remove('open'); document.body.style.overflow = ''; sheetOpen = false; }
+function hideSheet() { document.getElementById('sheet').classList.remove('open'); document.body.style.overflow = ''; sheetOpen = false; clearInterval(abTimer); }
 function closeSheet() {
   if (!sheetOpen) return;
   hideSheet();
@@ -627,6 +632,77 @@ function openSettings() {
 }
 const val = id => document.getElementById(id).value;
 
+// ---------- воздержание (скрытый экран: долгое нажатие на логотип) ----------
+const AB_GOALS = [1, 3, 7, 14, 21, 30, 60, 90, 180, 365];
+let abTimer = null;
+const fmtDur = ms => {
+  const s = Math.floor(ms / 1000), d = Math.floor(s / 86400);
+  return (d ? d + ' д ' : '') + Math.floor(s % 86400 / 3600) + ' ч ' + pad(Math.floor(s % 3600 / 60)) + ' мин ' + pad(s % 60) + ' с';
+};
+
+function abBody() {
+  const A = S.abst, now = Date.now();
+  if (!A.start) return `
+    <div class="big" style="font-size:28px;margin-top:6px">Отсчёт не начат</div>
+    <div class="note" style="margin:6px 0 16px">Если уже держишься — укажи, с какого дня.</div>
+    <label class="f"><span>Начало</span><input type="date" id="ab-date" value="${today()}" max="${today()}"></label>
+    <button class="btn" data-act="abStart">Начать отсчёт</button>
+    ${abHistory()}`;
+  const ms = now - A.start, days = Math.floor(ms / 864e5);
+  const next = AB_GOALS.find(g => g > days) || Math.ceil((days + 1) / 365) * 365;
+  const prev = [...AB_GOALS].reverse().find(g => g <= days) || 0;
+  const pct = (ms - prev * 864e5) / ((next - prev) * 864e5) * 100;
+  const best = Math.max(ms, ...A.history.map(h => h.end - h.start));
+  return `
+    <div class="ab-big"><b>${days}</b><span>${plural(days, 'день', 'дня', 'дней')}</span></div>
+    <div class="ab-time" id="ab-time">${fmtDur(ms)}</div>
+    <div class="card" style="margin-top:16px">
+      <div class="row"><span class="mut sm">ЦЕЛЬ · ${next} ${plural(next, 'ДЕНЬ', 'ДНЯ', 'ДНЕЙ')}</span><span class="num sm">осталось ${fmtDur(next * 864e5 - ms).replace(/ \d+ с$/, '')}</span></div>
+      <div class="bar"><i style="width:${Math.min(100, pct)}%"></i></div>
+    </div>
+    <div class="stats">${stat('Рекорд', Math.floor(best / 864e5), plural(Math.floor(best / 864e5), 'день', 'дня', 'дней'))}${stat('Срывов', A.history.length)}${stat('Начало', fmtShort(iso(new Date(A.start))))}</div>
+    <div style="height:14px"></div>
+    <button class="btn ghost" data-act="abFail">Сорвался</button>
+    ${abHistory()}
+    <h2>Настройки</h2>
+    <label class="f"><span>Изменить дату начала</span><input type="date" id="ab-date" value="${iso(new Date(A.start))}" max="${today()}"></label>
+    <button class="btn ghost sm" data-act="abStart">Сохранить дату</button>
+    <button class="btn danger" data-act="abReset">Стереть всё</button>`;
+}
+
+function abHistory() {
+  const h = [...S.abst.history].reverse().slice(0, 15);
+  if (!h.length) return '';
+  return `<h2>Прошлые серии</h2><div class="list">${h.map(x => {
+    const d = Math.floor((x.end - x.start) / 864e5);
+    return `<div class="li"><span class="mut sm">${fmtShort(iso(new Date(x.start)))} — ${fmtShort(iso(new Date(x.end)))}</span><span class="num">${d} ${plural(d, 'день', 'дня', 'дней')}</span></div>`;
+  }).join('')}</div>`;
+}
+
+function openAbst() {
+  sheetKind = 'abst';
+  openSheet('Воздержание', abBody());
+  clearInterval(abTimer);
+  abTimer = setInterval(() => {
+    const el = document.getElementById('ab-time');
+    if (el && S.abst.start) el.textContent = fmtDur(Date.now() - S.abst.start);
+  }, 1000);
+}
+const abRedraw = () => { document.getElementById('sh-b').innerHTML = abBody(); };
+
+// долгое нажатие на логотип (0,8 с) открывает экран; обычный тап ничего не делает
+(() => {
+  const logo = document.querySelector('.logo');
+  let t = null;
+  const cancel = () => { clearTimeout(t); logo.classList.remove('hold'); };
+  logo.addEventListener('pointerdown', () => {
+    logo.classList.add('hold');
+    t = setTimeout(() => { cancel(); if (navigator.vibrate) navigator.vibrate(30); openAbst(); }, 800);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => logo.addEventListener(ev, cancel));
+  logo.addEventListener('contextmenu', e => e.preventDefault());
+})();
+
 function importFile(file) {
   if (!file) return;
   const r = new FileReader();
@@ -710,6 +786,25 @@ const ACT = {
 
   saveSet: () => { Object.assign(S.settings, {kcal: num(val('st-kcal')) || 2500, protein: num(val('st-p')) || 150, fat: num(val('st-f')) || 80, carbs: num(val('st-c')) || 300, sleep: num(val('st-s')) || 8}); save(); closeSheet(); render(); },
   season: () => openSeason(),
+  abStart: () => {
+    const d = val('ab-date');
+    if (!d) return alert('Укажи дату');
+    // сегодня — с этой минуты, прошлый день — с его начала
+    S.abst.start = d >= today() ? Date.now() : parse(d).getTime();
+    save(); abRedraw();
+  },
+  abFail: () => {
+    if (!confirm('Начать отсчёт заново? Текущая серия уйдёт в историю.')) return;
+    const now = Date.now();
+    S.abst.history.push({start: S.abst.start, end: now});
+    S.abst.start = now;
+    save(); abRedraw();
+  },
+  abReset: () => {
+    if (!confirm('Стереть счётчик и всю историю?')) return;
+    S.abst = {start: null, history: []};
+    save(); abRedraw();
+  },
   saveSeason: () => {
     const start = val('z-start'), end = val('z-end'), target = Math.round(num(val('z-t')));
     if (!start || !end || end <= start) return alert('Конец сезона должен быть позже начала');
